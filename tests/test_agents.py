@@ -2,8 +2,6 @@
 Tests for all migration agents.
 """
 
-import pytest
-
 from agents.approval_agent import ApprovalAgent
 from agents.dry_run_agent import DryRunAgent
 from agents.migration_agent import MigrationAgent
@@ -11,7 +9,6 @@ from agents.schema_mapper_agent import SchemaMappingAgent
 from agents.validation_agent import ValidationAgent
 from models.data_models import (
     ApprovalDecision,
-    MigrationRecord,
     MigrationStage,
     RecordStatus,
 )

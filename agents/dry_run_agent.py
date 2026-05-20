@@ -6,8 +6,7 @@ the result WITHOUT writing anything to ServiceNow.
 Produces a DryRunResult that is presented to the human approver.
 """
 
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agents.base_agent import AgentResult, BaseAgent
 from agents.schema_mapper_agent import SchemaMappingAgent
@@ -15,7 +14,6 @@ from connectors.servicenow_connector import ServiceNowConnector
 from models.data_models import (
     CherwellRecord,
     DryRunResult,
-    MigrationRecord,
     MigrationStage,
     MigrationState,
     RecordStatus,
@@ -45,7 +43,6 @@ class DryRunAgent(BaseAgent):
             state.stage = MigrationStage.FAILED
             return AgentResult(success=False, state=state, error=err)
 
-        start = time.monotonic()
         result = DryRunResult(total_records=len(state.records))
         sample_limit = 5
 
@@ -84,7 +81,6 @@ class DryRunAgent(BaseAgent):
                 result.errors.append(f"[{mr.source_record.incident_id}] Transform error: {exc}")
                 mr.status = RecordStatus.FAILED
 
-        elapsed = time.monotonic() - start
         # Rough estimate: real migration ≈ 0.5 s per record
         result.estimated_duration_seconds = result.valid_records * 0.5
         result.field_coverage = self._field_coverage(state)

@@ -6,7 +6,6 @@ so the pipeline can be exercised without live credentials.
 Set MIGRATION_MOCK_MODE=false to talk to a real Cherwell server.
 """
 
-import time
 from typing import Any, Dict, List, Optional
 
 import requests

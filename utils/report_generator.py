@@ -3,11 +3,8 @@ Report generation utilities.
 Produces JSON summary reports and a human-readable Rich table to the console.
 """
 
-import json
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.table import Table

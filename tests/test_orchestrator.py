@@ -5,8 +5,6 @@ Integration tests for the MigrationOrchestrator.
 import json
 from pathlib import Path
 
-import pytest
-
 from orchestrator.orchestrator import MigrationOrchestrator
 from models.data_models import MigrationStage
 

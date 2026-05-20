@@ -2,10 +2,8 @@
 Tests for the Cherwell and ServiceNow connectors.
 """
 
-import pytest
-
-from connectors.cherwell_connector import CherwellConnector
-from connectors.servicenow_connector import ServiceNowConnector
+from connectors.cherwell_connector import CherwellConnector  # noqa: F401 - used via fixtures
+from connectors.servicenow_connector import ServiceNowConnector  # noqa: F401 - used via fixtures
 
 
 class TestCherwellConnector:
