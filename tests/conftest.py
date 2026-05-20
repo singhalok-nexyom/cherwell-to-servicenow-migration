@@ -22,7 +22,7 @@ def cherwell_config() -> CherwellConfig:
         base_url="https://mock-cherwell.example.com/CherwellAPI",
         client_id="test-client-id",
         username="test-user",
-        password="test-password",  # noqa: S106  # test credential
+        password="test-password",  # noqa: S106 - intentional test fixture credential
     )
 
 
@@ -31,7 +31,7 @@ def servicenow_config() -> ServiceNowConfig:
     return ServiceNowConfig(
         instance_url="https://mock-instance.service-now.com",
         username="test-user",
-        password="test-password",  # noqa: S106  # test credential
+        password="test-password",  # noqa: S106 - intentional test fixture credential
     )
 
 

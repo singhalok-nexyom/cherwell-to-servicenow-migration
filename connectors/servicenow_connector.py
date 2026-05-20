@@ -63,7 +63,7 @@ class ServiceNowConnector(BaseConnector):
     def authenticate(self) -> bool:
         if self.mock_mode:
             logger.info("[mock] ServiceNow authentication skipped in mock mode")
-            self._auth_token = "mock-sn-token"
+            self._auth_token = "MOCK_TOKEN_NOT_A_REAL_CREDENTIAL"  # nosec B105 – placeholder for mock mode only
             return True
 
         # Validate credentials via a lightweight GET against the instance

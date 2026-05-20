@@ -277,7 +277,7 @@ class CherwellConnector(BaseConnector):
     def authenticate(self) -> bool:
         if self.mock_mode:
             logger.info("[mock] Cherwell authentication skipped in mock mode")
-            self._auth_token = "mock-token"
+            self._auth_token = "MOCK_TOKEN_NOT_A_REAL_CREDENTIAL"  # nosec B105 – placeholder for mock mode only
             return True
 
         url = f"{self.config.base_url}/token"
