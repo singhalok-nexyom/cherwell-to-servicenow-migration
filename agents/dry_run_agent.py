@@ -86,7 +86,7 @@ class DryRunAgent(BaseAgent):
         result.field_coverage = self._field_coverage(state)
 
         state.dry_run_result = result
-        state.stage = MigrationStage.AWAIT_APPROVAL
+        state.stage = MigrationStage.LLM_REVIEW
 
         self._info(
             "Dry run complete – valid=%d  invalid=%d  duplicates=%d",

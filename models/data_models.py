@@ -22,6 +22,7 @@ class MigrationStage(str, Enum):
     MAP_SCHEMA = "map_schema"
     FETCH_RECORDS = "fetch_records"
     DRY_RUN = "dry_run"
+    LLM_REVIEW = "llm_review"      # AI analysis + HIL approve/reject gate
     AWAIT_APPROVAL = "await_approval"
     MIGRATE = "migrate"
     VALIDATE = "validate"
@@ -165,6 +166,16 @@ class ApprovalDecision(BaseModel):
     notes: Optional[str] = None
 
 
+class LLMReviewDecision(BaseModel):
+    """Records the outcome of the LLM-assisted Human-in-the-Loop review gate."""
+    approved: bool
+    reviewer: str = "operator"
+    notes: str = ""
+    llm_analysis: str = ""      # Full LLM-generated analysis text
+    attempt: int = 1
+    reviewed_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
 class MigrationState(BaseModel):
     """Immutable-ish snapshot of the full migration pipeline state.
 
@@ -178,6 +189,7 @@ class MigrationState(BaseModel):
     records: List[MigrationRecord] = Field(default_factory=list)
     total_records: int = 0
     dry_run_result: Optional[DryRunResult] = None
+    llm_review: Optional[LLMReviewDecision] = None
     approval: Optional[ApprovalDecision] = None
     migration_result: Optional[MigrationResult] = None
     errors: List[str] = Field(default_factory=list)
@@ -186,3 +198,4 @@ class MigrationState(BaseModel):
     completed_at: Optional[str] = None
     is_mock_mode: bool = True
     source_filter: Optional[Dict[str, Any]] = None
+    restart_count: int = 0      # Incremented each time the pipeline restarts after an LLM review rejection

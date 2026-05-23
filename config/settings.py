@@ -64,3 +64,26 @@ class MigrationConfig(BaseSettings):
     retry_delay: float = 1.0        # Seconds between retries (exponential back-off base)
     source_object_type: str = "Incident"
     target_table: str = "incident"
+    max_pipeline_restarts: int = 3  # Maximum restarts allowed after LLM review rejection
+
+
+class LLMConfig(BaseSettings):
+    """Configuration for the LLM-powered HIL review agent."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    api_key: str = ""                             # LLM_API_KEY – leave blank for mock mode
+    base_url: str = "https://api.openai.com/v1"   # LLM_BASE_URL
+    model: str = "gpt-4o-mini"                     # LLM_MODEL
+    timeout: int = 60                              # LLM_TIMEOUT (seconds)
+    mock_mode: bool = True                         # LLM_MOCK_MODE – True if no API key set
+
+    def model_post_init(self, __context: object) -> None:  # type: ignore[override]
+        """Auto-enable mock mode when no API key is configured."""
+        if not self.api_key:
+            object.__setattr__(self, "mock_mode", True)

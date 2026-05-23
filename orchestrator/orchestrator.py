@@ -9,8 +9,10 @@ a final report.
 Pipeline stages
 ---------------
 INITIALIZE → FETCH_SCHEMA → MAP_SCHEMA → FETCH_RECORDS →
-DRY_RUN → AWAIT_APPROVAL → MIGRATE → VALIDATE → COMPLETE
-                                      ↘ FAILED (any stage)
+DRY_RUN → LLM_REVIEW (AI analysis + HIL gate) → AWAIT_APPROVAL →
+MIGRATE → VALIDATE → COMPLETE
+           ↘ REJECTED → INITIALIZE (restart)
+                                         ↘ FAILED (any stage)
 """
 
 import json
@@ -25,10 +27,11 @@ from rich.rule import Rule
 
 from agents.approval_agent import ApprovalAgent
 from agents.dry_run_agent import DryRunAgent
+from agents.llm_review_agent import LLMReviewAgent
 from agents.migration_agent import MigrationAgent
 from agents.schema_mapper_agent import SchemaMappingAgent
 from agents.validation_agent import ValidationAgent
-from config.settings import CherwellConfig, MigrationConfig, ServiceNowConfig
+from config.settings import CherwellConfig, LLMConfig, MigrationConfig, ServiceNowConfig
 from connectors.cherwell_connector import CherwellConnector
 from connectors.servicenow_connector import ServiceNowConnector
 from models.data_models import (
@@ -56,10 +59,12 @@ class MigrationOrchestrator:
         cherwell_cfg: Optional[CherwellConfig] = None,
         servicenow_cfg: Optional[ServiceNowConfig] = None,
         migration_cfg: Optional[MigrationConfig] = None,
+        llm_cfg: Optional[LLMConfig] = None,
     ) -> None:
         self.cherwell_cfg = cherwell_cfg or CherwellConfig()
         self.servicenow_cfg = servicenow_cfg or ServiceNowConfig()
         self.migration_cfg = migration_cfg or MigrationConfig()
+        self.llm_cfg = llm_cfg or LLMConfig()
 
         mock = self.migration_cfg.mock_mode
 
@@ -74,6 +79,15 @@ class MigrationOrchestrator:
             self.migration_cfg.log_level,
         )
         self.dry_run_agent = DryRunAgent(self.servicenow, self.migration_cfg.log_level)
+        self.llm_review_agent = LLMReviewAgent(
+            mock_mode=self.llm_cfg.mock_mode,
+            llm_api_key=self.llm_cfg.api_key,
+            llm_base_url=self.llm_cfg.base_url,
+            llm_model=self.llm_cfg.model,
+            llm_timeout=self.llm_cfg.timeout,
+            auto_approve=self.migration_cfg.auto_approve,
+            log_level=self.migration_cfg.log_level,
+        )
         self.approval_agent = ApprovalAgent(
             auto_approve=self.migration_cfg.auto_approve,
             log_level=self.migration_cfg.log_level,
@@ -112,11 +126,43 @@ class MigrationOrchestrator:
             self._save_state(state)
             return state
 
+        max_restarts = self.migration_cfg.max_pipeline_restarts
+
         # ---- Stage machine loop ----
         while state.stage not in (MigrationStage.COMPLETE, MigrationStage.FAILED):
             console.print(Rule(f"[bold cyan]Stage: {state.stage.value.upper()}[/bold cyan]"))
+            prev_stage = state.stage
             state = self._dispatch(state)
             self._save_state(state)
+
+            # LLM review rejection resets the pipeline to INITIALIZE.
+            # Detect this transition and create a fresh state so the next
+            # iteration starts cleanly.
+            if (
+                prev_stage == MigrationStage.LLM_REVIEW
+                and state.stage == MigrationStage.INITIALIZE
+            ):
+                restart_count = state.restart_count + 1
+                if restart_count > max_restarts:
+                    logger.error(
+                        "Maximum pipeline restarts (%d) reached – aborting.", max_restarts
+                    )
+                    state.stage = MigrationStage.FAILED
+                    state.errors.append(
+                        f"Maximum restarts ({max_restarts}) reached after repeated "
+                        "LLM review rejections."
+                    )
+                    break
+                console.print(
+                    Rule(
+                        f"[bold yellow]Pipeline Restart #{restart_count} / {max_restarts}[/bold yellow]"
+                    )
+                )
+                logger.info("Restarting pipeline (attempt %d/%d)", restart_count, max_restarts)
+                state = MigrationState(
+                    is_mock_mode=self.migration_cfg.mock_mode,
+                    restart_count=restart_count,
+                )
 
         # Final report
         self._finalise(state)
@@ -131,47 +177,37 @@ class MigrationOrchestrator:
         try:
             if stage == MigrationStage.INITIALIZE:
                 state = self._stage_initialize(state)
-
             elif stage == MigrationStage.FETCH_SCHEMA:
-                result = self.schema_agent.run(state)
-                state = result.state
-                if not result.success:
-                    state.stage = MigrationStage.FAILED
-
+                state = self._stage_run_agent(state, self.schema_agent, fail_on_error=True)
             elif stage == MigrationStage.FETCH_RECORDS:
                 state = self._stage_fetch_records(state)
-
             elif stage == MigrationStage.DRY_RUN:
-                result = self.dry_run_agent.run(state)
-                state = result.state
-                if not result.success:
-                    state.stage = MigrationStage.FAILED
-
+                state = self._stage_run_agent(state, self.dry_run_agent, fail_on_error=True)
+            elif stage == MigrationStage.LLM_REVIEW:
+                state = self._stage_run_agent(state, self.llm_review_agent, fail_on_error=False)
             elif stage == MigrationStage.AWAIT_APPROVAL:
-                result = self.approval_agent.run(state)
-                state = result.state
-                # Approval agent sets stage internally (MIGRATE or FAILED)
-
+                state = self._stage_run_agent(state, self.approval_agent, fail_on_error=False)
             elif stage == MigrationStage.MIGRATE:
-                result = self.migration_agent.run(state)
-                state = result.state
-                if not result.success:
-                    state.stage = MigrationStage.FAILED
-
+                state = self._stage_run_agent(state, self.migration_agent, fail_on_error=True)
             elif stage == MigrationStage.VALIDATE:
-                result = self.validation_agent.run(state)
-                state = result.state
-
+                state = self._stage_run_agent(state, self.validation_agent, fail_on_error=False)
             else:
                 logger.warning("Unhandled stage: %s", stage)
                 state.stage = MigrationStage.FAILED
                 state.errors.append(f"Unhandled pipeline stage: {stage}")
-
         except Exception as exc:  # noqa: BLE001
-            logger.error("Unhandled error in stage %s: %s", stage, exc, exc_info=True)
+            logger.exception("Unhandled error in stage %s: %s", stage, exc)
             state.stage = MigrationStage.FAILED
             state.errors.append(f"{stage}: {exc}")
+        return state
 
+    @staticmethod
+    def _stage_run_agent(state: MigrationState, agent: object, *, fail_on_error: bool) -> MigrationState:
+        """Run a single agent and optionally mark pipeline FAILED on failure."""
+        result = agent.run(state)  # type: ignore[attr-defined]
+        state = result.state
+        if fail_on_error and not result.success:
+            state.stage = MigrationStage.FAILED
         return state
 
     # ------------------------------------------------------------------
